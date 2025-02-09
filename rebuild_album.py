@@ -5,8 +5,9 @@ import logging
 import shutil
 import hashlib
 
-import win32file, pywintypes, win32con
-
+import win32file
+import pywintypes
+import win32con
 
 def set_file_creation_time(file_path, creation_time):
     """
@@ -31,7 +32,6 @@ def set_file_creation_time(file_path, creation_time):
         logging.error(f"设置创建时间失败 {file_path}: {e}")
         return False
 
-
 def update_file_times(file_path, creation_time, modification_time):
     """
     更新文件的创建时间和修改时间
@@ -44,7 +44,6 @@ def update_file_times(file_path, creation_time, modification_time):
         logging.debug(f"更新时间成功: {file_path}")
     except Exception as e:
         logging.error(f"更新文件时间失败 {file_path}: {e}")
-
 
 def compute_md5(file_path, chunk_size=8192):
     """
@@ -63,7 +62,6 @@ def compute_md5(file_path, chunk_size=8192):
         raise
     return md5.hexdigest()
 
-
 def generate_new_filename(dest_dir, file_name):
     """
     根据目标目录中已存在的同名文件生成新的文件名（只允许重命名一次，即生成 {basename}_1{ext}）
@@ -74,7 +72,6 @@ def generate_new_filename(dest_dir, file_name):
     if os.path.exists(os.path.join(dest_dir, new_name)):
         return None
     return new_name
-
 
 def parse_date(date_str):
     """
@@ -91,7 +88,6 @@ def parse_date(date_str):
         logging.error(f"解析日期失败 {date_str}: {e}")
         return None
 
-
 def load_photo_details(details_csv_path):
     """
     加载 Photo Details.csv，返回字典：键为图片文件名，值为记录字典
@@ -107,7 +103,6 @@ def load_photo_details(details_csv_path):
     except Exception as e:
         logging.error(f"读取 {details_csv_path} 失败: {e}")
     return photo_details
-
 
 def copy_file_with_md5(src_file, dest_dir):
     """
@@ -180,13 +175,13 @@ def copy_file_with_md5(src_file, dest_dir):
             logging.error(f"复制失败: {src_file} -> {dest_file}: {e}")
             return None
 
-
-def process_part_phase1(part_number, source_root, target_root):
+def process_part_phase1(part_number, source_root, target_root, total_parts):
     """
     阶段1：处理单个部分，将 Photos 目录中的照片（更新时间后）从源文件夹复制到目标根目录，
-    源文件夹（"iCloud 照片 第 {n} 部分（共 101 部分）/Photos"）内的照片保持不变。
+    源文件夹名称格式为：
+        "iCloud 照片 第 {part_number} 部分（共 {total_parts} 部分）"
     """
-    part_folder = os.path.join(source_root, f"iCloud 照片 第 {part_number} 部分（共 101 部分）")
+    part_folder = os.path.join(source_root, f"iCloud 照片 第 {part_number} 部分（共 {total_parts} 部分）")
     photos_dir = os.path.join(part_folder, "Photos")
     if not os.path.exists(photos_dir):
         logging.warning(f"未找到 Photos 文件夹: {photos_dir}")
@@ -221,15 +216,16 @@ def process_part_phase1(part_number, source_root, target_root):
         if copied_path is None:
             logging.warning(f"文件复制失败或跳过: {src_file}")
 
-
-def build_global_album_mapping(source_root):
+def build_global_album_mapping(source_root, total_parts):
     """
     遍历所有部分的 Albums 文件夹，读取各个 CSV 文件，
     返回字典：键为照片名（例如 "IMG_8372.JPG"），值为所属相册名称的集合。
+    使用的部分文件夹名称格式为：
+        "iCloud 照片 第 {part} 部分（共 {total_parts} 部分）"
     """
     albums_mapping = {}
-    for part in range(1, 102):
-        part_folder = os.path.join(source_root, f"iCloud 照片 第 {part} 部分（共 101 部分）")
+    for part in range(1, total_parts + 1):
+        part_folder = os.path.join(source_root, f"iCloud 照片 第 {part} 部分（共 {total_parts} 部分）")
         albums_dir = os.path.join(part_folder, "Albums")
         if not os.path.exists(albums_dir) or not os.path.isdir(albums_dir):
             continue
@@ -251,7 +247,6 @@ def build_global_album_mapping(source_root):
             except Exception as e:
                 logging.error(f"读取相册文件 {album_csv_path} 失败: {e}")
     return albums_mapping
-
 
 def copy_file_to_album(src_file, album_folder):
     """
@@ -303,8 +298,7 @@ def copy_file_to_album(src_file, album_folder):
         else:
             renamed_dest = os.path.join(album_folder, candidate_renamed)
             if os.path.exists(renamed_dest):
-                logging.warning(
-                    f"在相册 {album_folder} 中重命名文件 {candidate_renamed} 已存在（大小不同），跳过 {src_file}")
+                logging.warning(f"在相册 {album_folder} 中重命名文件 {candidate_renamed} 已存在（大小不同），跳过 {src_file}")
                 return False
             try:
                 shutil.copy2(src_file, renamed_dest)
@@ -327,7 +321,6 @@ def copy_file_to_album(src_file, album_folder):
         except Exception as e:
             logging.error(f"复制 {src_file} 到 {dest_file} 失败: {e}")
             return False
-
 
 def process_album_image(image_name, album_set, target_root, allowed_albums=None):
     """
@@ -398,33 +391,36 @@ def process_album_image(image_name, album_set, target_root, allowed_albums=None)
                 logging.debug(f"删除目标根目录中的 live photo 文件 {live_photo_to_copy}")
             except Exception as e:
                 logging.error(f"删除 live photo 文件 {live_photo_to_copy} 失败: {e}")
-
+    else:
+        logging.warning(f"对于 {file_to_copy}，未成功复制到任何相册，保留该文件。")
 
 def main():
     # 请根据实际情况修改以下路径
     source_root = r"D:\Download\数据和隐私"
     target_root = r"D:\Download\Photos"
 
+    # 指定 iCloud 文件夹拆分数量（原为 101），可根据实际情况修改
+    total_parts = 101  # 例如：如果拆分为 120 个文件夹，则设置 total_parts = 120
+
     # 仅复制指定相册功能：
     # 若只希望复制特定相册，请在此处定义 allowed_albums，例如：
     # allowed_albums = {"AlbumA", "AlbumB"}
     # 若不限制复制所有相册，则设置为 None
-    allowed_albums = None  # 例如：allowed_albums = {"AlbumA"}
+    allowed_albums = None  # 例如：allowed_albums = {"Hidden"}
 
     os.makedirs(target_root, exist_ok=True)
 
     logging.info("========== 阶段1：将所有照片从各部分复制到目标根目录 ==========")
-    for part in range(1, 102):
+    for part in range(1, total_parts + 1):
         logging.info(f"处理第 {part} 部分")
-        process_part_phase1(part, source_root, target_root)
+        process_part_phase1(part, source_root, target_root, total_parts)
     logging.info("阶段1完成。")
 
     logging.info("========== 阶段2：根据 Albums 信息整理相册 ==========")
-    albums_mapping = build_global_album_mapping(source_root)
+    albums_mapping = build_global_album_mapping(source_root, total_parts)
     for image_name, album_set in albums_mapping.items():
         process_album_image(image_name, album_set, target_root, allowed_albums)
     logging.info("阶段2完成。")
-
 
 if __name__ == "__main__":
     logging.basicConfig(
