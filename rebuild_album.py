@@ -391,8 +391,6 @@ def process_album_image(image_name, album_set, target_root, allowed_albums=None)
                 logging.debug(f"删除目标根目录中的 live photo 文件 {live_photo_to_copy}")
             except Exception as e:
                 logging.error(f"删除 live photo 文件 {live_photo_to_copy} 失败: {e}")
-    else:
-        logging.warning(f"对于 {file_to_copy}，未成功复制到任何相册，保留该文件。")
 
 def main():
     # 请根据实际情况修改以下路径
